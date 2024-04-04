@@ -36,7 +36,9 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _getCurrentLocation();
     requestLocationPermission();
+
   }
 
   // Function to request location permission
@@ -137,6 +139,7 @@ class _MapScreenState extends State<MapScreen> {
       Position position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
       LatLng currentLocation = LatLng(position.latitude, position.longitude);
+      print('Current Location: $currentLocation'); // Debug statement
       setState(() {
         _currentMapPosition = currentLocation; // Update current position
         _markers.clear(); // Clear existing markers
@@ -156,6 +159,23 @@ class _MapScreenState extends State<MapScreen> {
       print('Error getting current location: $e');
     }
   }
+
+  // Function to update markers
+  void _updateMarkers(LatLng position) {
+    setState(() {
+      _markers.clear();
+      _markers.add(Marker(
+        markerId: MarkerId(position.toString()),
+        position: position,
+        infoWindow: InfoWindow(
+          title: 'Current Location',
+          snippet: 'This is your current location',
+        ),
+        icon: BitmapDescriptor.defaultMarker,
+      ));
+    });
+  }
+
 
 
 
