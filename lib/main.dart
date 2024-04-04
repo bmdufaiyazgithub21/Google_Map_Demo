@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
-import 'dart:async'; // Import this for Timer
+import 'package:geolocator/geolocator.dart'; // Import geolocator package
+import 'package:permission_handler/permission_handler.dart'; // Import permission_handler package
 
 void main() {
   runApp(MyApp());
@@ -30,6 +31,27 @@ class _MapScreenState extends State<MapScreen> {
   bool _isSatelliteView = false;
   String _currentAddress = '';
   TextEditingController _searchController = TextEditingController();
+  int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    requestLocationPermission();
+  }
+
+  // Function to request location permission
+  void requestLocationPermission() async {
+    var status = await Permission.location.request();
+    if (status.isGranted) {
+      // Permission granted
+    } else if (status.isDenied) {
+      // Permission denied
+    } else if (status.isPermanentlyDenied) {
+      // Permission permanently denied
+      // Open app settings to allow permission manually
+      openAppSettings();
+    }
+  }
 
   // Function to handle tap on the map
   void _onMapTapped(LatLng tappedPosition) {
@@ -61,7 +83,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       List<Placemark> placemarks =
       await placemarkFromCoordinates(position.latitude, position.longitude);
-      if (placemarks != null && placemarks.isNotEmpty) {
+      if (placemarks.isNotEmpty) {
         Placemark placemark = placemarks[0];
         setState(() {
           _currentAddress =
@@ -96,9 +118,10 @@ class _MapScreenState extends State<MapScreen> {
   void _searchLocation(String searchTerm) async {
     try {
       List<Location> locations = await locationFromAddress(searchTerm);
-      if (locations != null && locations.isNotEmpty) {
+      if (locations.isNotEmpty) {
         Location location = locations[0];
-        LatLng searchedPosition = LatLng(location.latitude, location.longitude);
+        LatLng searchedPosition =
+        LatLng(location.latitude, location.longitude);
         mapController.animateCamera(CameraUpdate.newLatLng(searchedPosition));
         _onMapTapped(searchedPosition);
       } else {
@@ -109,26 +132,61 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  void _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+      LatLng currentLocation = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _currentMapPosition = currentLocation; // Update current position
+        _markers.clear(); // Clear existing markers
+        _markers.add(Marker(
+          markerId: MarkerId(currentLocation.toString()),
+          position: currentLocation,
+          infoWindow: InfoWindow(
+            title: 'Current Location',
+            snippet: 'This is your current location',
+          ),
+          icon: BitmapDescriptor.defaultMarker,
+        ));
+      });
+      mapController.animateCamera(CameraUpdate.newLatLng(currentLocation));
+      _getAddress(currentLocation); // Get address details for current location
+    } catch (e) {
+      print('Error getting current location: $e');
+    }
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(kToolbarHeight + 15),
-        child: AppBar(
-          title: Container(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.greenAccent.shade200,
-            ),
+    return SafeArea(
+      left: false,
+      right: false,
+      child: Scaffold(
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight + 20),
+          child: Padding(
+            padding:
+            const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 8),
             child: TextFormField(
               controller: _searchController,
               decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: 'Search location...',
-                hintStyle: TextStyle(fontSize: 19),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                hintText: 'Search Here...',
+                hintStyle: const TextStyle(fontSize: 21),
+                contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                prefixIcon: IconButton(
+                  icon: const Icon(Icons.location_on_outlined,
+                      size: 30, color: Colors.black),
+                  onPressed: () {},
+                ),
                 suffixIcon: IconButton(
-                  icon: Icon(Icons.search),
+                  icon: const Icon(Icons.search, size: 30, color: Colors.black),
                   onPressed: () {
                     String searchTerm = _searchController.text.trim();
                     if (searchTerm.isNotEmpty) {
@@ -142,52 +200,111 @@ class _MapScreenState extends State<MapScreen> {
               },
             ),
           ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
         ),
-      ),
-      body: Stack(
-        children: <Widget>[
-          GoogleMap(
-            onMapCreated: _onMapCreated,
-            onTap: _onMapTapped, // Handle tap on map
-            initialCameraPosition: CameraPosition(
-              target: _center,
-              zoom: 10.0,
+        body: Stack(
+          children: <Widget>[
+            GoogleMap(
+              onMapCreated: _onMapCreated,
+              onTap: _onMapTapped, // Handle tap on map
+              initialCameraPosition: CameraPosition(
+                target: _currentMapPosition, // Update initial position here
+                zoom: 10.0,
+              ),
+              markers: _markers,
+              onCameraMove: _onCameraMove,
+              mapType: _isSatelliteView ? MapType.satellite : MapType.normal,
             ),
-            markers: _markers,
-            onCameraMove: _onCameraMove,
-            mapType: _isSatelliteView ? MapType.satellite : MapType.normal,
-          ),
-          Padding(
-            padding: const EdgeInsets.all(14.0),
-            child: Align(
-              alignment: Alignment.topRight,
+
+            Positioned(
+              top: 20,
+              right: 20,
               child: Column(
                 children: [
                   FloatingActionButton(
                     onPressed: _onAddMarkerButtonPressed,
                     materialTapTargetSize: MaterialTapTargetSize.padded,
-                    backgroundColor: Colors.green,
-                    child: const Icon(Icons.map, size: 30.0),
+                    backgroundColor: Colors.white,
+                    shape: const CircleBorder(),
+                    child: const CircleAvatar(
+                      backgroundColor: Colors.black,
+                      radius: 17, // Adjust the radius to control the size of the circle
+                      child: Icon(Icons.map, size: 30.0, color: Colors.white),
+                    ),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   FloatingActionButton(
                     onPressed: _toggleMapType,
                     materialTapTargetSize: MaterialTapTargetSize.padded,
-                    backgroundColor: Colors.green,
-                    child: const Icon(Icons.layers, size: 30.0),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Current Address: $_currentAddress',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                    backgroundColor: Colors.white,
+                    shape: const CircleBorder(),
+                    child: const CircleAvatar(
+                      backgroundColor: Colors.black,
+                      radius: 17, // Adjust the radius to control the size of the circle
+                      child: Icon(Icons.layers, size: 30.0, color: Colors.white),
+                    ),
+                  )
                 ],
               ),
             ),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 111.0, right: 7),
+                child: FloatingActionButton(
+                  onPressed: _getCurrentLocation, // Get current location
+                  backgroundColor: Colors.white,
+                  child: const Icon(Icons.my_location, color: Colors.black),
+                ),
+              ),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'Current Address: $_currentAddress',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: Builder(
+          builder: (context) => BottomNavigationBar(
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.search),
+                label: 'Search',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: 'Profile',
+              ),
+            ],
+            currentIndex: _selectedIndex,
+            onTap: (index) {
+              setState(() {
+                _selectedIndex = index;
+                // Handle navigation based on index
+                switch (index) {
+                  case 0:
+                  // Navigate to home
+                    break;
+                  case 1:
+                  // Navigate to search
+                    break;
+                  case 2:
+                  // Navigate to profile
+                    break;
+                  default:
+                }
+              });
+            },
           ),
-        ],
+        ),
       ),
     );
   }
